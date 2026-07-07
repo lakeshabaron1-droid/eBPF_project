@@ -1,0 +1,77 @@
+listen:
+  address: ":8080"
+
+ebpf:
+  interface: "eth0"
+  xdp_mode: "generic"
+  rate_limit:
+    threshold: 100
+    window_ms: 1000
+  ring_buffer_size: 262144
+
+auth:
+  mode: "both"
+  api_keys:
+    - key: "sk_live_gateway_prod_001"
+      name: "frontend-app"
+      scopes:
+        - "read"
+        - "write"
+    - key: "sk_live_gateway_prod_002"
+      name: "monitoring-service"
+      scopes:
+        - "read"
+    - key: "sk_live_gateway_admin_001"
+      name: "admin-panel"
+      scopes:
+        - "read"
+        - "write"
+        - "admin"
+  jwt:
+    algorithm: "HS256"
+    secret: "your-256-bit-secret-key-change-in-production"
+    issuer: "ebpf-gateway"
+    jwks_cache_ttl: 3600
+
+routes:
+  - path: "/api/users"
+    upstream: "http://localhost:9001"
+    auth_required: true
+    required_scopes:
+      - "read"
+    timeout_ms: 5000
+
+  - path: "/api/orders"
+    upstream: "http://localhost:9002"
+    auth_required: true
+    required_scopes:
+      - "read"
+    timeout_ms: 5000
+
+  - path: "/api/admin"
+    upstream: "http://localhost:9001"
+    auth_required: true
+    required_scopes:
+      - "admin"
+    timeout_ms: 10000
+
+  - path: "/health"
+    upstream: "http://localhost:9001"
+    auth_required: false
+    timeout_ms: 2000
+
+health_check:
+  interval_s: 10
+  timeout_ms: 2000
+  path: "/health"
+  unhealthy_threshold: 3
+  healthy_threshold: 2
+
+dashboard:
+  enabled: true
+  api_address: ":8081"
+  cors_origin: "http://localhost:3000"
+
+logging:
+  level: "info"
+  format: "json"

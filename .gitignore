@@ -1,0 +1,31 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+
+# eBPF generated files
+bpf/headers/vmlinux.h
+internal/ebpf/*_bpfel.go
+internal/ebpf/*_bpfeb.go
+internal/ebpf/*.o
+
+# Next.js
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# TLS certs (local dev)
+*.pem
+*.key
+*.crt
