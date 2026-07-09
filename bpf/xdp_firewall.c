@@ -97,6 +97,22 @@ static __always_inline int parse_packet(void *data, void *data_end, struct drop_
     return 0;
 }
 
+static __always_inline void emit_drop_event(struct drop_event *event, __u8 reason) {
+    event->reason = reason;
+    struct drop_event *ring_event = bpf_ringbuf_reserve(&drop_events, sizeof(struct drop_event), 0);
+    if (ring_event) {
+        *ring_event = *event;
+        bpf_ringbuf_submit(ring_event, 0);
+    }
+}
+
+static __always_inline void increment_counter(__u32 index) {
+    __u64 *count = bpf_map_lookup_elem(&packet_counters, &index);
+    if (count) {
+        __sync_fetch_and_add(count, 1);
+    }
+}
+
 SEC("xdp")
 int xdp_firewall(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
@@ -104,14 +120,45 @@ int xdp_firewall(struct xdp_md *ctx) {
     struct drop_event event = {0};
 
     if (parse_packet(data, data_end, &event) < 0) {
+        increment_counter(0);
         return XDP_PASS;
     }
 
     __u32 src_ip = event.src_ip;
     __u8 *blocked = bpf_map_lookup_elem(&blocklist_map, &src_ip);
     if (blocked && *blocked == 1) {
+        increment_counter(1);
+        emit_drop_event(&event, 1);
         return XDP_DROP;
     }
 
+    __u32 config_key = 0;
+    struct rl_config *config = bpf_map_lookup_elem(&rate_limit_config, &config_key);
+    if (config && config->threshold > 0) {
+        __u64 now = bpf_ktime_get_ns();
+        struct rl_state *state = bpf_map_lookup_elem(&rate_limit_state, &src_ip);
+        if (!state) {
+            struct rl_state new_state = {
+                .window_start = now,
+                .count = 1,
+            };
+            bpf_map_update_elem(&rate_limit_state, &src_ip, &new_state, BPF_ANY);
+        } else {
+            __u64 window_ns = (__u64)config->window_ms * 1000000;
+            if (now - state->window_start >= window_ns) {
+                state->window_start = now;
+                state->count = 1;
+            } else {
+                state->count++;
+                if (state->count > config->threshold) {
+                    increment_counter(1);
+                    emit_drop_event(&event, 2);
+                    return XDP_DROP;
+                }
+            }
+        }
+    }
+
+    increment_counter(0);
     return XDP_PASS;
 }
