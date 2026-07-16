@@ -2,6 +2,7 @@
 package ebpf
 
 
+
 import (
 
 	"errors"
@@ -21,7 +22,9 @@ import (
 
 
 
+
 type Manager struct {
+
 
 
 
@@ -39,6 +42,7 @@ type Manager struct {
 
 
 	tcLink    link.Link
+
 
 
 	iface     *net.Interface
@@ -79,6 +83,7 @@ func (m *Manager) LoadPrograms(ifaceName string) error {
 
 
 
+
 	m.iface = iface
 
 
@@ -95,8 +100,3 @@ func (m *Manager) LoadPrograms(ifaceName string) error {
 
 
 	}
-
-
-
-	if err := LoadTcMetricsObjects(&m.tcObjs, nil); err != nil {
-		return fmt.Errorf("loading tc: %w", err)
