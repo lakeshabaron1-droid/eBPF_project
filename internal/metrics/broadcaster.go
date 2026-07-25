@@ -7,19 +7,14 @@ import (
 	"sync"
 )
 
-
 type SSEBroker struct {
 	mu         sync.RWMutex
 	clients    map[chan []byte]bool
-
-
 	register   chan chan []byte
 	unregister chan chan []byte
-
 	input      chan AggregatedSnapshot
 	done       chan struct{}
 }
-
 
 func NewSSEBroker() *SSEBroker {
 	return &SSEBroker{
@@ -27,7 +22,6 @@ func NewSSEBroker() *SSEBroker {
 		register:   make(chan chan []byte),
 		unregister: make(chan chan []byte),
 		input:      make(chan AggregatedSnapshot, 64),
-
 		done:       make(chan struct{}),
 	}
 }
@@ -50,8 +44,6 @@ func (b *SSEBroker) hub() {
 		case <-b.done:
 			b.mu.Lock()
 			for ch := range b.clients {
-
-
 				close(ch)
 				delete(b.clients, ch)
 			}
@@ -63,19 +55,13 @@ func (b *SSEBroker) hub() {
 			b.clients[client] = true
 			b.mu.Unlock()
 
-
 		case client := <-b.unregister:
 			b.mu.Lock()
 			if _, ok := b.clients[client]; ok {
-
-
 				close(client)
 				delete(b.clients, client)
 			}
 			b.mu.Unlock()
-
-
-
 
 		case snap := <-b.input:
 			data, err := json.Marshal(snap)
@@ -91,29 +77,42 @@ func (b *SSEBroker) hub() {
 						b.unregister <- c
 					}(client)
 				}
-
 			}
 			b.mu.RUnlock()
 		}
 	}
-
 }
 
 func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
-
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	client := make(chan []byte, 16)
+	b.register <- client
 
+	defer func() {
+		b.unregister <- client
+	}()
 
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data, ok := <-client:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
