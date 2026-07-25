@@ -1,67 +1,47 @@
 package metrics
 
-
-
-
 import (
-
-
 	"fmt"
-
 	"sync"
-
 	"time"
 
 	bpf "ebpf-gateway/internal/ebpf"
-
 )
 
 type MetricSnapshot struct {
-
-	Timestamp     time.Time          `json:"timestamp"`
-	Passed        uint64             `json:"passed"`
-	Dropped       uint64             `json:"dropped"`
-	ProtocolStats map[string]uint64  `json:"protocol_stats"`
+	Timestamp     time.Time           `json:"timestamp"`
+	Passed        uint64              `json:"passed"`
+	Dropped       uint64              `json:"dropped"`
+	ProtocolStats map[string]uint64   `json:"protocol_stats"`
 	PortStats     map[uint16]PortStat `json:"port_stats"`
-	DropEvents    []DropEventInfo    `json:"drop_events"`
+	DropEvents    []DropEventInfo     `json:"drop_events"`
 }
 
 type PortStat struct {
 	Packets uint64 `json:"packets"`
 	Bytes   uint64 `json:"bytes"`
-
 }
-
 
 type DropEventInfo struct {
 	SrcIP    string `json:"src_ip"`
 	DstIP    string `json:"dst_ip"`
-
 	SrcPort  uint16 `json:"src_port"`
 	DstPort  uint16 `json:"dst_port"`
-
-
-
 	Protocol uint8  `json:"protocol"`
 	Reason   uint8  `json:"reason"`
 }
 
 type Collector struct {
-	maps       *bpf.MapManager
-	eventCh    chan bpf.DropEvent
-	done       chan struct{}
-	mu         sync.RWMutex
-	latest     MetricSnapshot
-
-
-	prevPassed uint64
+	maps        *bpf.MapManager
+	eventCh     chan bpf.DropEvent
+	done        chan struct{}
+	mu          sync.RWMutex
+	latest      MetricSnapshot
+	prevPassed  uint64
 	prevDropped uint64
-	listeners  []chan<- MetricSnapshot
-
-	listenerMu sync.RWMutex
+	listeners   []chan<- MetricSnapshot
+	listenerMu  sync.RWMutex
 }
-
-
 
 func NewCollector(maps *bpf.MapManager) *Collector {
 	return &Collector{
@@ -69,7 +49,6 @@ func NewCollector(maps *bpf.MapManager) *Collector {
 		eventCh: make(chan bpf.DropEvent, 1024),
 		done:    make(chan struct{}),
 	}
-
 }
 
 func (c *Collector) Subscribe(ch chan<- MetricSnapshot) {
@@ -86,14 +65,10 @@ func (c *Collector) Start() error {
 	go c.collectLoop()
 	go c.consumeEvents()
 
-
-
 	return nil
 }
 
 func (c *Collector) Stop() {
-
-
 	close(c.done)
 }
 
@@ -105,32 +80,22 @@ func (c *Collector) Latest() MetricSnapshot {
 
 func (c *Collector) collectLoop() {
 	ticker := time.NewTicker(1 * time.Second)
-
-
 	defer ticker.Stop()
 
 	for {
-
 		select {
 		case <-c.done:
-
-
 			return
-
 		case <-ticker.C:
-
 			c.poll()
 		}
 	}
-
 }
 
 func (c *Collector) poll() {
 	passed, dropped, err := c.maps.GetPacketCounters()
 	if err != nil {
 		return
-
-
 	}
 
 	protoStats, _ := c.maps.GetProtocolStats()
@@ -141,16 +106,13 @@ func (c *Collector) poll() {
 		portStats[port] = PortStat{
 			Packets: ps.Packets,
 			Bytes:   ps.Bytes,
-
 		}
 	}
-
 
 	deltaPassed := passed - c.prevPassed
 	deltaDropped := dropped - c.prevDropped
 	c.prevPassed = passed
 	c.prevDropped = dropped
-
 
 	snap := MetricSnapshot{
 		Timestamp:     time.Now(),
@@ -158,9 +120,49 @@ func (c *Collector) poll() {
 		Dropped:       deltaDropped,
 		ProtocolStats: protoStats,
 		PortStats:     portStats,
-
 	}
 
 	c.mu.Lock()
 	snap.DropEvents = c.latest.DropEvents
 	c.latest = snap
+	c.latest.DropEvents = nil
+	c.mu.Unlock()
+
+	c.listenerMu.RLock()
+	for _, ch := range c.listeners {
+		select {
+		case ch <- snap:
+		default:
+		}
+	}
+	c.listenerMu.RUnlock()
+}
+
+func ipToString(ip uint32) string {
+	return fmt.Sprintf("%d.%d.%d.%d",
+		byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip))
+}
+
+func (c *Collector) consumeEvents() {
+	for {
+		select {
+		case <-c.done:
+			return
+		case ev := <-c.eventCh:
+			info := DropEventInfo{
+				SrcIP:    ipToString(ev.SrcIP),
+				DstIP:    ipToString(ev.DstIP),
+				SrcPort:  ev.SrcPort,
+				DstPort:  ev.DstPort,
+				Protocol: ev.Protocol,
+				Reason:   ev.Reason,
+			}
+			c.mu.Lock()
+			c.latest.DropEvents = append(c.latest.DropEvents, info)
+			if len(c.latest.DropEvents) > 100 {
+				c.latest.DropEvents = c.latest.DropEvents[len(c.latest.DropEvents)-100:]
+			}
+			c.mu.Unlock()
+		}
+	}
+}
