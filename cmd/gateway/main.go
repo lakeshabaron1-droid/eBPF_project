@@ -34,9 +34,13 @@ func main() {
 		if err := bpfManager.AttachXDP(cfg.Ebpf.XdpMode); err != nil {
 			log.Printf("Warning: failed to attach XDP: %v", err)
 		}
+
+
 		if err := bpfManager.AttachTC(); err != nil {
+
 			log.Printf("Warning: failed to attach TC: %v", err)
 		}
+
 		defer bpfManager.Close()
 	}
 
@@ -63,6 +67,7 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
+
 		for range ticker.C {
 			snap := aggregator.Snapshot()
 			select {
@@ -73,6 +78,8 @@ func main() {
 	}()
 
 	router, err := proxy.NewRouter(cfg, func() (*config.Config, error) {
+
+
 		return config.Load(*configPath)
 	})
 	if err != nil {
@@ -101,6 +108,7 @@ func main() {
 
 	apiServer := &http.Server{
 		Addr:    cfg.Dashboard.ApiAddress,
+
 		Handler: apiMux,
 	}
 
@@ -127,13 +135,3 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := apiServer.Shutdown(ctx); err != nil {
-		log.Printf("API server shutdown error: %v", err)
-	}
-
-	if err := gateway.Stop(); err != nil {
-		log.Printf("Gateway shutdown error: %v", err)
-	}
-
-	log.Println("Gateway stopped.")
-}

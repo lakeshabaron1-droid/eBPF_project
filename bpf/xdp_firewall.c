@@ -3,6 +3,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
+
 #include <linux/in.h>
 #include "headers/bpf_helpers.h"
 #include "headers/bpf_endian.h"
@@ -28,6 +29,8 @@ struct rl_config {
     __u32 window_ms;
 };
 
+
+
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
@@ -35,15 +38,18 @@ struct {
     __type(value, struct rl_config);
 } rate_limit_config SEC(".maps");
 
+
 struct rl_state {
     __u64 window_start;
     __u32 count;
 };
 
+
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 100000);
     __type(key, __u32);
+
     __type(value, struct rl_state);
 } rate_limit_state SEC(".maps");
 
@@ -57,11 +63,14 @@ struct drop_event {
 };
 
 struct {
+
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 262144);
 } drop_events SEC(".maps");
 
 static __always_inline int parse_packet(void *data, void *data_end, struct drop_event *event) {
+
+
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end)
         return -1;
@@ -70,6 +79,7 @@ static __always_inline int parse_packet(void *data, void *data_end, struct drop_
         return -1;
 
     struct iphdr *ip = (void *)(eth + 1);
+
     if ((void *)(ip + 1) > data_end)
         return -1;
 
@@ -82,8 +92,11 @@ static __always_inline int parse_packet(void *data, void *data_end, struct drop_
         if ((void *)(tcp + 1) > data_end)
             return -1;
         event->src_port = bpf_ntohs(tcp->source);
+
         event->dst_port = bpf_ntohs(tcp->dest);
     } else if (ip->protocol == IPPROTO_UDP) {
+
+
         struct udphdr *udp = (void *)ip + (ip->ihl * 4);
         if ((void *)(udp + 1) > data_end)
             return -1;
@@ -97,6 +110,7 @@ static __always_inline int parse_packet(void *data, void *data_end, struct drop_
     return 0;
 }
 
+
 static __always_inline void emit_drop_event(struct drop_event *event, __u8 reason) {
     event->reason = reason;
     struct drop_event *ring_event = bpf_ringbuf_reserve(&drop_events, sizeof(struct drop_event), 0);
@@ -104,11 +118,14 @@ static __always_inline void emit_drop_event(struct drop_event *event, __u8 reaso
         *ring_event = *event;
         bpf_ringbuf_submit(ring_event, 0);
     }
+
 }
+
 
 static __always_inline void increment_counter(__u32 index) {
     __u64 *count = bpf_map_lookup_elem(&packet_counters, &index);
     if (count) {
+
         __sync_fetch_and_add(count, 1);
     }
 }
@@ -138,10 +155,10 @@ int xdp_firewall(struct xdp_md *ctx) {
         __u64 now = bpf_ktime_get_ns();
         struct rl_state *state = bpf_map_lookup_elem(&rate_limit_state, &src_ip);
         if (!state) {
-            struct rl_state new_state = {
-                .window_start = now,
-                .count = 1,
-            };
+            struct rl_state new_state;
+            new_state.window_start = now;
+            new_state.count = 1;
+
             bpf_map_update_elem(&rate_limit_state, &src_ip, &new_state, BPF_ANY);
         } else {
             __u64 window_ns = (__u64)config->window_ms * 1000000;
@@ -154,11 +171,3 @@ int xdp_firewall(struct xdp_md *ctx) {
                     increment_counter(1);
                     emit_drop_event(&event, 2);
                     return XDP_DROP;
-                }
-            }
-        }
-    }
-
-    increment_counter(0);
-    return XDP_PASS;
-}

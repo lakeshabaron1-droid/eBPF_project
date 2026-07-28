@@ -124,17 +124,3 @@ lint:
 	@echo ">>> Linting Go code..."
 	$(GO) vet ./...
 	@echo ">>> Lint complete"
-
-## deps: Download Go dependencies
-deps:
-	@echo ">>> Downloading Go dependencies..."
-	$(GO) mod download
-	$(GO) mod tidy
-	@echo ">>> Dependencies downloaded"
-
-## setup: Run VM setup script to install all system dependencies
-setup:
-	@echo ">>> Running VM setup..."
-	chmod +x scripts/setup-vm.sh
-	sudo scripts/setup-vm.sh
-	@echo ">>> Setup complete"

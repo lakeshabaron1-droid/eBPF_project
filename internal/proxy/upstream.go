@@ -1,4 +1,3 @@
-
 package proxy
 
 import (
@@ -6,12 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-
-
-
 	"sync"
-
-
 	"sync/atomic"
 	"time"
 
@@ -20,9 +14,7 @@ import (
 
 type Upstream struct {
 	URL       *url.URL
-
 	Alive     atomic.Bool
-
 	Transport *http.Transport
 	Failures  atomic.Int32
 	Successes atomic.Int32
@@ -31,7 +23,6 @@ type Upstream struct {
 type UpstreamPool struct {
 	backends []*Upstream
 	mu       sync.RWMutex
-
 	current  atomic.Uint32
 	cfg      config.HealthCheckConfig
 }
@@ -39,39 +30,28 @@ type UpstreamPool struct {
 func NewUpstreamPool(cfg config.HealthCheckConfig, targets []string) (*UpstreamPool, error) {
 	pool := &UpstreamPool{
 		cfg: cfg,
-
 	}
-
-
 
 	for _, t := range targets {
 		if t == "" {
-
 			continue
 		}
-
 		u, err := url.Parse(t)
 		if err != nil {
-
 			return nil, err
 		}
 		upstream := &Upstream{
-
 			URL: u,
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
 				DialContext: (&net.Dialer{
 					Timeout:   30 * time.Second,
 					KeepAlive: 30 * time.Second,
-
 				}).DialContext,
-
 				ForceAttemptHTTP2:     true,
 				MaxIdleConns:          100,
-
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
-
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		}
@@ -84,8 +64,6 @@ func NewUpstreamPool(cfg config.HealthCheckConfig, targets []string) (*UpstreamP
 	}
 
 	return pool, nil
-
-
 }
 
 func (p *UpstreamPool) activeHealthCheck() {
@@ -99,11 +77,9 @@ func (p *UpstreamPool) activeHealthCheck() {
 	for range ticker.C {
 		p.mu.RLock()
 		backends := p.backends
-
 		p.mu.RUnlock()
 
 		for _, b := range backends {
-
 			go p.checkBackend(client, b)
 		}
 	}
@@ -111,13 +87,11 @@ func (p *UpstreamPool) activeHealthCheck() {
 
 func (p *UpstreamPool) checkBackend(client *http.Client, b *Upstream) {
 	healthURL := b.URL.String() + p.cfg.Path
-
 	resp, err := client.Get(healthURL)
 
 	if err != nil || resp.StatusCode >= 500 {
 		fails := b.Failures.Add(1)
 		b.Successes.Store(0)
-
 		if fails >= int32(p.cfg.UnhealthyThreshold) {
 			b.Alive.Store(false)
 		}
@@ -136,13 +110,11 @@ func (p *UpstreamPool) checkBackend(client *http.Client, b *Upstream) {
 func (p *UpstreamPool) ReportFailure(target string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-
 	for _, b := range p.backends {
 		if b.URL.Host == target {
 			fails := b.Failures.Add(1)
 			b.Successes.Store(0)
 			if fails >= int32(p.cfg.UnhealthyThreshold) {
-
 				b.Alive.Store(false)
 			}
 			break
@@ -165,9 +137,39 @@ func (p *UpstreamPool) GetNext() (*Upstream, error) {
 		idx := (start + i) % count
 		if p.backends[idx].Alive.Load() {
 			return p.backends[idx], nil
-
 		}
-
 	}
 
 	return nil, errors.New("no healthy upstreams available")
+}
+
+func (p *UpstreamPool) RoundTripper() http.RoundTripper {
+	return &poolRoundTripper{pool: p}
+}
+
+type poolRoundTripper struct {
+	pool *UpstreamPool
+}
+
+func (rt *poolRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	upstream, err := rt.pool.GetNext()
+	if err != nil {
+		return nil, err
+	}
+
+	req.URL.Host = upstream.URL.Host
+	req.URL.Scheme = upstream.URL.Scheme
+	req.Host = upstream.URL.Host
+
+	resp, err := upstream.Transport.RoundTrip(req)
+	if err != nil {
+		rt.pool.ReportFailure(upstream.URL.Host)
+		return nil, err
+	}
+
+	if resp.StatusCode >= 500 {
+		rt.pool.ReportFailure(upstream.URL.Host)
+	}
+
+	return resp, nil
+}

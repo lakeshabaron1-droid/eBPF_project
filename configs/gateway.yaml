@@ -1,5 +1,5 @@
 listen:
-  address: ":8080"
+  address: ":8090"
 
 ebpf:
   interface: "eth0"
@@ -68,10 +68,3 @@ health_check:
   healthy_threshold: 2
 
 dashboard:
-  enabled: true
-  api_address: ":8081"
-  cors_origin: "http://localhost:3000"
-
-logging:
-  level: "info"
-  format: "json"
