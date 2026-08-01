@@ -416,3 +416,81 @@ body {
 .btn-danger {
   background: var(--accent-red);
   color: #fff;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.slider {
+  flex: 1;
+  accent-color: var(--accent-blue);
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 14px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+  color: var(--text-primary);
+  font-size: 13px;
+  z-index: 1000;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.row-flash {
+  animation: rowFlash 0.6s ease;
+}
+
+@keyframes rowFlash {
+  0% {
+    background: rgba(239, 68, 68, 0.3);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.table-container {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+@media (max-width: 1200px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
