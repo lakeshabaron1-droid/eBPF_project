@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"os"
 	"sort"
+
 	"strings"
 	"time"
 
+
 	"ebpf-gateway/internal/config"
+
 	"ebpf-gateway/internal/proxy"
 )
 
@@ -17,11 +20,14 @@ type ZeroTrustEnforcer struct {
 	apiKeyValidator *APIKeyValidator
 	jwtValidator    *JWTValidator
 	mode            string
+
 	routes          []config.RouteConfig
+
 }
 
 func NewZeroTrustEnforcer(cfg config.AuthConfig, routes []config.RouteConfig) *ZeroTrustEnforcer {
 	sortedRoutes := make([]config.RouteConfig, len(routes))
+
 	copy(sortedRoutes, routes)
 	sort.Slice(sortedRoutes, func(i, j int) bool {
 		return len(sortedRoutes[i].Path) > len(sortedRoutes[j].Path)
@@ -32,10 +38,11 @@ func NewZeroTrustEnforcer(cfg config.AuthConfig, routes []config.RouteConfig) *Z
 		routes: sortedRoutes,
 	}
 
-	if cfg.Mode == "apikey" || cfg.Mode == "both" {
 
+	if cfg.Mode == "apikey" || cfg.Mode == "both" {
 		e.apiKeyValidator = NewAPIKeyValidator(cfg.ApiKeys)
 	}
+
 
 	if cfg.Mode == "jwt" || cfg.Mode == "both" {
 		e.jwtValidator = NewJWTValidator(cfg.Jwt)
@@ -53,6 +60,7 @@ func (e *ZeroTrustEnforcer) matchRoute(path string) (config.RouteConfig, bool) {
 	return config.RouteConfig{}, false
 }
 
+
 func (e *ZeroTrustEnforcer) Middleware() proxy.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,19 +70,21 @@ func (e *ZeroTrustEnforcer) Middleware() proxy.Middleware {
 				return
 			}
 
-
 			var authenticated bool
 			var userID string
 			var userScopes []string
 			var authMethod string
 
+
 			if e.apiKeyValidator != nil {
+
 				info, valid := e.apiKeyValidator.Validate(r)
 				if valid {
 					authenticated = true
 					userID = info.Name
 					userScopes = info.Scopes
 					authMethod = "apikey"
+
 				}
 			}
 
@@ -87,7 +97,6 @@ func (e *ZeroTrustEnforcer) Middleware() proxy.Middleware {
 						authenticated = true
 						userID = claims.Sub
 						userScopes = claims.Scopes
-
 						authMethod = "jwt"
 					}
 				}
@@ -100,9 +109,12 @@ func (e *ZeroTrustEnforcer) Middleware() proxy.Middleware {
 			}
 
 			if len(routeCfg.RequiredScopes) > 0 {
+
 				if !hasRequiredScopes(userScopes, routeCfg.RequiredScopes) {
+
 					e.auditLog(r, userID, "denied", "insufficient scopes")
 					http.Error(w, "Forbidden", http.StatusForbidden)
+
 					return
 				}
 			}
@@ -122,3 +134,30 @@ func hasRequiredScopes(userScopes []string, required []string) bool {
 	scopeSet := make(map[string]bool)
 	for _, s := range userScopes {
 		scopeSet[s] = true
+	}
+	for _, r := range required {
+
+		if !scopeSet[r] {
+			return false
+
+		}
+	}
+	return true
+}
+
+func (e *ZeroTrustEnforcer) auditLog(r *http.Request, userID, decision, detail string) {
+	entry := map[string]interface{}{
+		"time":       time.Now().Format(time.RFC3339),
+		"type":       "auth_audit",
+		"request_id": r.Header.Get("X-Request-ID"),
+		"method":     r.Method,
+		"path":       r.URL.Path,
+		"remote_ip":  r.RemoteAddr,
+		"user_id":    userID,
+		"decision":   decision,
+		"detail":     detail,
+	}
+	jsonLog, _ := json.Marshal(entry)
+	fmt.Fprintln(os.Stdout, string(jsonLog))
+}
+
