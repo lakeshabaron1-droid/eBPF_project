@@ -203,3 +203,29 @@ func (mm *MapManager) GetProtocolStats() (map[string]uint64, error) {
 	if mm.m == nil || mm.m.tcObjs.ProtocolMetrics == nil {
 		return stats, nil
 	}
+	numCPUs := runtime.NumCPU()
+
+	protos := []struct {
+		idx  uint32
+		name string
+	}{
+		{0, "TCP"},
+		{1, "UDP"},
+		{2, "ICMP"},
+		{3, "Other"},
+	}
+
+	var vals []uint64
+	for _, p := range protos {
+		if err := mm.m.tcObjs.ProtocolMetrics.Lookup(&p.idx, &vals); err == nil {
+			var total uint64
+			for i := 0; i < numCPUs && i < len(vals); i++ {
+				total += vals[i]
+			}
+			stats[p.name] = total
+		}
+	}
+
+	return stats, nil
+}
+

@@ -3,17 +3,22 @@ package ebpf
 import (
 	"errors"
 	"fmt"
+
 	"net"
 
 	"github.com/cilium/ebpf/link"
 )
 
+
 type Manager struct {
+
 	xdpObjs   XdpFirewallObjects
 	tcObjs    TcMetricsObjects
 	xdpLink   link.Link
+
 	tcLink    link.Link
 	iface     *net.Interface
+
 }
 
 func NewManager() *Manager {
@@ -21,6 +26,7 @@ func NewManager() *Manager {
 }
 
 func (m *Manager) LoadPrograms(ifaceName string) error {
+
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
 		return fmt.Errorf("interface %s: %w", ifaceName, err)
@@ -40,6 +46,8 @@ func (m *Manager) LoadPrograms(ifaceName string) error {
 
 func (m *Manager) AttachXDP(mode string) error {
 	if m.iface == nil {
+
+
 		return errors.New("not loaded")
 	}
 
@@ -70,12 +78,14 @@ func (m *Manager) AttachXDP(mode string) error {
 		m.xdpLink = l
 	}
 
+
 	return nil
 }
 
 func (m *Manager) AttachTC() error {
 	if m.iface == nil {
 		return errors.New("not loaded")
+
 	}
 	return nil
 }

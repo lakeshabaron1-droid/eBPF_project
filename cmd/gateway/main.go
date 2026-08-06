@@ -15,6 +15,7 @@ import (
 	"ebpf-gateway/internal/ebpf"
 	"ebpf-gateway/internal/metrics"
 	"ebpf-gateway/internal/proxy"
+
 	"ebpf-gateway/internal/ratelimit"
 )
 
@@ -44,6 +45,7 @@ func main() {
 		defer bpfManager.Close()
 	}
 
+
 	mapManager := ebpf.NewMapManager(bpfManager)
 	if err := mapManager.UpdateConfig(cfg.Ebpf.RateLimit.Threshold, cfg.Ebpf.RateLimit.WindowMs); err != nil {
 		log.Printf("Warning: failed to update rate limit map: %v", err)
@@ -59,6 +61,7 @@ func main() {
 	collector.Subscribe(aggregator.InputChannel())
 	aggregator.Start()
 	defer aggregator.Stop()
+
 
 	broadcaster := metrics.NewSSEBroker()
 	broadcaster.Start()
@@ -134,4 +137,17 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if err := apiServer.Shutdown(ctx); err != nil {
+		log.Printf("API server shutdown error: %v", err)
+	}
+
+
+	if err := gateway.Stop(); err != nil {
+		log.Printf("Gateway shutdown error: %v", err)
+	}
+
+	log.Println("Gateway stopped.")
+}
+
 
